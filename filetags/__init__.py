@@ -75,7 +75,7 @@ DEFAULT_IMAGE_VIEWER_LINUX = 'geeqie'
 DEFAULT_IMAGE_VIEWER_WINDOWS = 'explorer'
 TAG_LINK_ORIGINALS_WHEN_TAGGING_LINKS = True
 IS_WINDOWS = False
-TAGGABLE_DIR_TERMINATOR = '.,'
+TAGGABLE_DIR_TERMINATOR = '._'
 
 # Determining the window size of the terminal:
 if platform.system() == 'Windows':
