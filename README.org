@@ -5,6 +5,7 @@ This fork of https://github.com/novoid/filetags adds the ablility to tag directo
 When the optional argument '-atd' or '--allow-tagging-directories' is used, directories that have an extension (a period followed by 1-3 characters)
 will be treated as files (as if they were zip files):
 
-* The directory contents will not be traversed and files in those directories will be ignored.
-* The directories themselves will be tagged or untagged or tagtree'ed, etc.
+The directory contents will not be traversed and files in those directories will be ignored.
+
+The directories themselves will be tagged or untagged or tagtree'ed, etc.
 
