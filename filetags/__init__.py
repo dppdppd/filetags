@@ -75,6 +75,7 @@ DEFAULT_IMAGE_VIEWER_LINUX = 'geeqie'
 DEFAULT_IMAGE_VIEWER_WINDOWS = 'explorer'
 TAG_LINK_ORIGINALS_WHEN_TAGGING_LINKS = True
 IS_WINDOWS = False
+TAGGABLE_DIR_TERMINATOR = '._'
 
 # Determining the window size of the terminal:
 if platform.system() == 'Windows':
@@ -172,6 +173,10 @@ parser.add_argument("-t", "--tags",
                     metavar='"STRING WITH TAGS"',
                     required=False,
                     help="One or more tags (in quotes, separated by spaces) to add/remove")
+
+parser.add_argument("-atd", "--allow-tagging-dirs", action="store_true",
+                    dest="allow_tagging_dirs",
+                    help="Directories that end with ._ are treated as files instead of directories for tagging purposes.")
 
 parser.add_argument("--remove", action="store_true",
                     help="Remove tags from (instead of adding to) file name(s)")
@@ -343,6 +348,7 @@ class SimpleCompleter(object):
         logging.debug('complete(%s, %s) => %s',
                       repr(text), state, repr(response))
         return response
+
 
 
 def contains_tag(filename, tagname=False):
@@ -732,7 +738,7 @@ def is_nonbroken_link(filename):
         else:
             return False  # file is not a windows lnk file at all
 
-    elif os.path.isfile(filename):
+    elif is_taggable(filename):
         if os.path.islink(filename):
             return True
     else:
@@ -854,6 +860,36 @@ def split_up_filename(filename, exception_on_file_not_found=False):
 
     return os.path.join(dirname, basename), dirname, basename, basename_without_lnk
 
+def is_taggable(filename):
+    """
+    Returns true if filename is a file or, if --allow-tagging-dirs,
+    it's a dir marked as taggable (e.g., dirname._ )
+    """
+
+    if os.path.isfile(filename):
+        return True
+    
+    elif not options.allow_tagging_dirs:
+        return False
+    
+    else:
+        return os.path.isdir(filename) and filename.endswith(TAGGABLE_DIR_TERMINATOR)
+
+
+def is_traversable_directory(filename):
+    """
+    If not --allow-tagging-dirs, returns true on dirs. Otherwise only
+    returns true if dir isn't marked as taggable (e.g., dirname._ )
+    """
+
+    if os.path.isfile(filename):
+        return False
+    
+    elif os.path.isdir(filename) and not options.allow_tagging_dirs:
+        return True
+    
+    else:
+        return os.path.isdir(filename) and not filename.endswith(TAGGABLE_DIR_TERMINATOR) 
 
 def handle_file_and_optional_link(orig_filename, tags, do_remove, do_filter, dryrun):
     """
@@ -867,14 +903,14 @@ def handle_file_and_optional_link(orig_filename, tags, do_remove, do_filter, dry
     num_errors = 0
     logging.debug("handle_file_and_optional_link(\"" + orig_filename + "\") …  " + '★' * 20)
 
-    if os.path.isdir(orig_filename):
+    if is_traversable_directory(orig_filename):
         logging.warning("Skipping directory \"%s\" because this tool only renames file names." % orig_filename)
         return num_errors, False
 
     filename, dirname, basename, basename_without_lnk = split_up_filename(orig_filename)
     global list_of_link_directories
 
-    if not (os.path.isfile(filename) or os.path.islink(filename)):
+    if not (is_taggable(filename) or os.path.islink(filename)):
         logging.debug('handle_file_and_optional_link: this is no regular file nor a link; ' +
                       'looking for an alternative file that starts with same substring …')
 
@@ -1602,24 +1638,24 @@ def locate_file_in_cwd_and_parent_directories(startfile, filename):
 
     filename_in_startfile_dir = os.path.join(os.path.dirname(os.path.abspath(startfile)), filename)
     filename_in_startdir = os.path.join(startfile, filename)
-    if startfile and os.path.isfile(startfile) and os.path.isfile(filename_in_startfile_dir):
+    if startfile and is_taggable(startfile) and is_taggable(filename_in_startfile_dir):
         # startfile=file: try to find the file within the dir where startfile lies:
         logging.debug('locate_file_in_cwd_and_parent_directories: found \"%s\" in directory of \"%s\" ..' %
                       (os.path.basename(filename_in_startfile_dir), os.path.dirname(filename_in_startfile_dir)))
         return filename_in_startfile_dir
-    elif startfile and os.path.isdir(startfile) and os.path.isfile(filename_in_startdir):
+    elif startfile and is_traversable_directory(startfile) and is_taggable(filename_in_startdir):
         # startfile=dir: try to find the file within the startfile dir:
         logging.debug('locate_file_in_cwd_and_parent_directories: found \"%s\" in directory \"%s\" ...' %
                       (os.path.basename(filename_in_startdir), startfile))
         return filename_in_startdir
     else:
         # no luck with the first guesses, trying to locate the file by traversing the parent directories:
-        if os.path.isfile(startfile):
+        if is_taggable(startfile):
             # startfile=file: set starting_dir to it dirname:
             starting_dir = os.path.dirname(os.path.abspath(startfile))
             logging.debug('locate_file_in_cwd_and_parent_directories: startfile [%s] found, using it as starting_dir [%s] ....' %
                           (str(startfile), starting_dir))
-        elif os.path.isdir(startfile):
+        elif is_traversable_directory(startfile):
             # startfile=dir: set starting_dir to it:
             starting_dir = startfile
             logging.debug('locate_file_in_cwd_and_parent_directories: startfile [%s] is a directory, using it as starting_dir [%s] .....' %
@@ -1637,7 +1673,7 @@ def locate_file_in_cwd_and_parent_directories(startfile, filename):
         while parent_dir != os.getcwd():
             os.chdir(parent_dir)
             filename_to_look_for = os.path.abspath(os.path.join(os.getcwd(), filename))
-            if os.path.isfile(filename_to_look_for):
+            if is_taggable(filename_to_look_for):
                 logging.debug('locate_file_in_cwd_and_parent_directories: found \"%s\" in directory \"%s\" ........' %
                               (filename, parent_dir))
                 os.chdir(starting_dir)
@@ -1703,7 +1739,7 @@ def locate_and_parse_controlled_vocabulary(startfile):
             logging.debug('locate_and_parse_controlled_vocabulary: this is Windows: ' +
                           '.filetags (non-lnk) was found')
 
-        if filename and is_lnk_file(filename) and os.path.isfile(get_link_source_file(filename)):
+        if filename and is_lnk_file(filename) and is_taggable(get_link_source_file(filename)):
             logging.debug('locate_and_parse_controlled_vocabulary: this is Windows: ' +
                           'set filename to source file for lnk .filetags')
             filename = get_link_source_file(filename)
@@ -1713,7 +1749,7 @@ def locate_and_parse_controlled_vocabulary(startfile):
 
     if filename:
         logging.debug('locate_and_parse_controlled_vocabulary: .filetags found: ' + filename)
-        if os.path.isfile(filename):
+        if is_taggable(filename):
             logging.debug('locate_and_parse_controlled_vocabulary: found controlled vocabulary')
 
             tags = []
@@ -1977,14 +2013,25 @@ def get_files_of_directory(directory):
 
     files = []
     logging.debug('get_files_of_directory(' + directory + ') called and traversing file system ...')
-    for (dirpath, dirnames, filenames) in os.walk(directory):
+    for (dirpath, dirnames, filenames) in os.walk(directory, topdown=True):
+
+        if options.allow_tagging_dirs:
+            taggable_dirs = [d for d in dirnames if d.endswith(TAGGABLE_DIR_TERMINATOR)]
+            dirnames[:] = [d for d in dirnames if not d.endswith(TAGGABLE_DIR_TERMINATOR)]
+
         if len(files) % 5000 == 0 and len(files) > 0:
             # while debugging a large hierarchy scan, I'd like to print out some stuff in-between scanning
             logging.info('found ' + str(len(files)) + ' files so far ... counting ...')
         if options.recursive:
             files.extend([os.path.join(dirpath, x) for x in filenames])
+            if options.allow_tagging_dirs:
+                files.extend([os.path.join(dirpath, x) for x in taggable_dirs])
+
         else:
             files.extend(filenames)
+            if options.allow_tagging_dirs:
+                files.extend(taggable_dirs)
+
             break
     logging.debug('get_files_of_directory(' + directory + ') finished with ' + str(len(files)) + ' items')
 
@@ -2010,12 +2057,12 @@ def assert_empty_tagfilter_directory(directory):
     @param directory: the directory to use as starting directory
     """
 
-    if options.tagtrees_directory and os.path.isdir(directory) and os.listdir(directory):
+    if options.tagtrees_directory and is_traversable_directory(directory) and os.listdir(directory):
         error_exit(13, 'The given tagtrees directory ' + directory +
                    ' is not empty. Aborting here instead ' +
                    'of removing its content without asking. Please free it up yourself and try again.')
 
-    if not os.path.isdir(directory):
+    if not is_traversable_directory(directory):
         logging.debug('creating non-existent tagfilter directory "%s" ...' % str(directory))
         if not options.dryrun:
             os.makedirs(directory)
@@ -2028,7 +2075,7 @@ def assert_empty_tagfilter_directory(directory):
             logging.debug('re-creating tagfilter directory "%s" ...' % str(directory))
             os.makedirs(directory)
     if not options.dryrun:
-        assert(os.path.isdir(directory))
+        assert (is_traversable_directory(directory))
 
 
 def get_common_tags_from_files(files):
@@ -2283,7 +2330,7 @@ def generate_tagtrees(directory, maxdepth, ignore_nontagged, nontagged_subdir, l
                         # ... generate a no-$unique_tagset directory ...
                         no_uniqueset_tag_found_dir = os.path.join(directory,
                                                                   'no-' + ("-").join(unique_tagset))  # example: "no-draft-final"
-                        if not os.path.isdir(no_uniqueset_tag_found_dir):
+                        if not is_traversable_directory(no_uniqueset_tag_found_dir):
                             logging.debug('generate_tagtrees: creating non-existent no_uniqueset_tag_found_dir "%s" ...' %
                                           str(no_uniqueset_tag_found_dir))
                             if not options.dryrun:
