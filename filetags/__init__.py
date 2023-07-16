@@ -75,7 +75,6 @@ DEFAULT_IMAGE_VIEWER_LINUX = 'geeqie'
 DEFAULT_IMAGE_VIEWER_WINDOWS = 'explorer'
 TAG_LINK_ORIGINALS_WHEN_TAGGING_LINKS = True
 IS_WINDOWS = False
-TAGGABLE_DIR_TERMINATOR = '._'
 
 # Determining the window size of the terminal:
 if platform.system() == 'Windows':
@@ -176,7 +175,7 @@ parser.add_argument("-t", "--tags",
 
 parser.add_argument("-atd", "--allow-tagging-dirs", action="store_true",
                     dest="allow_tagging_dirs",
-                    help="Directories that end with ._ are treated as files instead of directories for tagging purposes.")
+                    help="Directories that end with an extension (a period followed by 1-3 characters) are treated as files instead of directories for tagging purposes.")
 
 parser.add_argument("--remove", action="store_true",
                     help="Remove tags from (instead of adding to) file name(s)")
@@ -860,10 +859,25 @@ def split_up_filename(filename, exception_on_file_not_found=False):
 
     return os.path.join(dirname, basename), dirname, basename, basename_without_lnk
 
+def has_tla_ext(filename):
+    """
+    Returns true if filename ends with a period and 1-3 characters.
+    """
+
+    groups = filename.split('.')
+
+    if len(groups) < 2:
+        return False
+    else:
+        tla_ext = groups[-1]
+
+        return len(tla_ext) > 0 and len(tla_ext) <= 3
+
+
 def is_taggable(filename):
     """
     Returns true if filename is a file or, if --allow-tagging-dirs,
-    it's a dir marked as taggable (e.g., dirname._ )
+    it's a dir marked as taggable (e.g., dirname.xxx )
     """
 
     if os.path.isfile(filename):
@@ -873,13 +887,13 @@ def is_taggable(filename):
         return False
     
     else:
-        return os.path.isdir(filename) and filename.endswith(TAGGABLE_DIR_TERMINATOR)
+        return os.path.isdir(filename) and has_tla_ext(filename)
 
 
 def is_traversable_directory(filename):
     """
     If not --allow-tagging-dirs, returns true on dirs. Otherwise only
-    returns true if dir isn't marked as taggable (e.g., dirname._ )
+    returns true if dir isn't marked as taggable (e.g., dirname.xxx )
     """
 
     if os.path.isfile(filename):
@@ -889,7 +903,7 @@ def is_traversable_directory(filename):
         return True
     
     else:
-        return os.path.isdir(filename) and not filename.endswith(TAGGABLE_DIR_TERMINATOR) 
+        return os.path.isdir(filename) and not has_tla_ext(filename)
 
 def handle_file_and_optional_link(orig_filename, tags, do_remove, do_filter, dryrun):
     """
@@ -2016,8 +2030,8 @@ def get_files_of_directory(directory):
     for (dirpath, dirnames, filenames) in os.walk(directory, topdown=True):
 
         if options.allow_tagging_dirs:
-            taggable_dirs = [d for d in dirnames if d.endswith(TAGGABLE_DIR_TERMINATOR)]
-            dirnames[:] = [d for d in dirnames if not d.endswith(TAGGABLE_DIR_TERMINATOR)]
+            taggable_dirs = [d for d in dirnames if has_tla_ext(d)]
+            dirnames[:] = [d for d in dirnames if not has_tla_ext(d)]
 
         if len(files) % 5000 == 0 and len(files) > 0:
             # while debugging a large hierarchy scan, I'd like to print out some stuff in-between scanning
