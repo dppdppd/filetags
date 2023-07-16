@@ -1,6 +1,6 @@
 * filetags
 
-This fork of https://github.com/novoid/filetags adds the ablility to treat certain directories as files for tagging purposes.
+This fork of https://github.com/novoid/filetags adds the ablility to tag directories.
 
 When the optional argument '-atd' or '--allow-tagging-directories' is used, directories that have an extension (a period followed by 1-3 characters)
 will be treated as files (as if they were zip files):
