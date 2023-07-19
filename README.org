@@ -2,10 +2,10 @@
 
 This fork of https://github.com/novoid/filetags adds the ablility to tag directories.
 
-When the optional argument '-atd' or '--allow-tagging-directories' is used, directories that have an extension (a period followed by 1-3 characters)
-will be treated as files (as if they were zip files):
+To treat directories as taggable objects, either:
 
-The directory contents will not be traversed and files in those directories will be ignored.
+1. Manually add tags to a dir (e.g., 'folder -- fantasy scifi')
+2. Create the file '.filetags--tag-dirs' in the parent directory of the directories you want to be taggable.
 
-The directories themselves will be tagged or untagged or tagtree'ed, etc.
+Note that taggable directories are treated as files and will never be recursed into.
 

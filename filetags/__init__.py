@@ -75,6 +75,7 @@ DEFAULT_IMAGE_VIEWER_LINUX = 'geeqie'
 DEFAULT_IMAGE_VIEWER_WINDOWS = 'explorer'
 TAG_LINK_ORIGINALS_WHEN_TAGGING_LINKS = True
 IS_WINDOWS = False
+ALLOW_TAGGING_DIRECTORIES_FILENAME = '.filetags-allow-tagging-dirs'
 
 # Determining the window size of the terminal:
 if platform.system() == 'Windows':
@@ -156,6 +157,9 @@ cache_of_files_with_metadata = {}  # dict of big list of dicts: 'filename', 'pat
 controlled_vocabulary_filename = ''
 list_of_link_directories = []
 chosen_tagtrees_dir = False  # holds the definitive choice for a destination folder for filtering or tagtrees
+list_of_taggable_dir_dirs = []
+list_of_non_taggable_dir_dirs = []
+
 
 parser = argparse.ArgumentParser(prog=sys.argv[0],
                                  # keep line breaks in EPILOG and such
@@ -859,20 +863,25 @@ def split_up_filename(filename, exception_on_file_not_found=False):
 
     return os.path.join(dirname, basename), dirname, basename, basename_without_lnk
 
-def has_tla_ext(filename):
-    """
-    Returns true if filename ends with a period and 1-3 characters.
-    """
+def dir_tagfile_exists(filename):
 
-    groups = filename.split('.')
+    global list_of_taggable_dir_dirs
+    global list_of_non_taggable_dir_dirs
 
-    if len(groups) < 2:
+    parent_dir = os.path.dirname(os.path.abspath(filename))
+
+    if parent_dir in list_of_taggable_dir_dirs:
+        return True
+    elif parent_dir in list_of_non_taggable_dir_dirs:
         return False
     else:
-        tla_ext = groups[-1]
-
-        return len(tla_ext) > 0 and len(tla_ext) <= 3
-
+        allow_taggable_dirs_file = os.path.join( parent_dir, ALLOW_TAGGING_DIRECTORIES_FILENAME)
+        if os.path.isfile(allow_taggable_dirs_file):
+            list_of_taggable_dir_dirs.append(parent_dir)
+            return True
+        else:
+            list_of_non_taggable_dir_dirs.append(parent_dir)
+            return False            
 
 def is_taggable(filename):
     """
@@ -886,8 +895,10 @@ def is_taggable(filename):
     elif not options.allow_tagging_dirs:
         return False
     
+    elif os.path.isdir(filename):
+        return contains_tag(filename) or dir_tagfile_exists(filename)
     else:
-        return os.path.isdir(filename) and has_tla_ext(filename)
+        return False
 
 
 def is_traversable_directory(filename):
@@ -903,7 +914,7 @@ def is_traversable_directory(filename):
         return True
     
     else:
-        return os.path.isdir(filename) and not has_tla_ext(filename)
+        return os.path.isdir(filename) and not is_taggable(filename)
 
 def handle_file_and_optional_link(orig_filename, tags, do_remove, do_filter, dryrun):
     """
@@ -1051,6 +1062,10 @@ def create_link(source, destination):
 
     """
 
+    # don't link control file
+    if source.endswith( ALLOW_TAGGING_DIRECTORIES_FILENAME ):
+        return
+    
     logging.debug('create_link(' + source + ', ' + destination + ') called')
     if IS_WINDOWS:
         # do lnk-files instead of symlinks:
@@ -1238,7 +1253,16 @@ def get_files_with_metadata(startdir=os.getcwd(), use_cache=True):
     else:
 
         cache = []
-        for root, dirs, files in os.walk(startdir):
+        for root, dirs, files in os.walk(startdir, topdown=True):
+
+            print(root)
+
+            if options.allow_tagging_dirs:
+                start = time.time()
+                taggable_dirs = [d for d in dirs if is_taggable(d)]
+                dirs[:] = [d for d in dirs if d not in taggable_dirs]
+                files.extend(taggable_dirs)
+                logging.info("Evaluating taggable dirs took %.2f seconds" % ( time.time() - start) )
 
             # logging.debug('get_files_with_metadata: root [%s]' % root)  # LOTS of debug output
             for filename in files:
@@ -2029,9 +2053,14 @@ def get_files_of_directory(directory):
     logging.debug('get_files_of_directory(' + directory + ') called and traversing file system ...')
     for (dirpath, dirnames, filenames) in os.walk(directory, topdown=True):
 
+        print(dirpath)
+
         if options.allow_tagging_dirs:
-            taggable_dirs = [d for d in dirnames if has_tla_ext(d)]
-            dirnames[:] = [d for d in dirnames if not has_tla_ext(d)]
+            start = time.time()
+            taggable_dirs = [d for d in dirnames if is_taggable(d)]
+            dirnames[:] = [d for d in dirnames if not d in taggable_dirs]
+            logging.info("Evaluating taggable dirs took %.2f seconds" % ( time.time() - start) )
+
 
         if len(files) % 5000 == 0 and len(files) > 0:
             # while debugging a large hierarchy scan, I'd like to print out some stuff in-between scanning
