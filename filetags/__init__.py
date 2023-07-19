@@ -75,7 +75,7 @@ DEFAULT_IMAGE_VIEWER_LINUX = 'geeqie'
 DEFAULT_IMAGE_VIEWER_WINDOWS = 'explorer'
 TAG_LINK_ORIGINALS_WHEN_TAGGING_LINKS = True
 IS_WINDOWS = False
-ALLOW_TAGGING_DIRECTORIES_FILENAME = '.filetags-allow-tagging-dirs'
+ALLOW_TAGGING_DIRECTORIES_FILENAME = '.filetags--tag-dirs'
 
 # Determining the window size of the terminal:
 if platform.system() == 'Windows':
@@ -176,10 +176,6 @@ parser.add_argument("-t", "--tags",
                     metavar='"STRING WITH TAGS"',
                     required=False,
                     help="One or more tags (in quotes, separated by spaces) to add/remove")
-
-parser.add_argument("-atd", "--allow-tagging-dirs", action="store_true",
-                    dest="allow_tagging_dirs",
-                    help="Directories that end with an extension (a period followed by 1-3 characters) are treated as files instead of directories for tagging purposes.")
 
 parser.add_argument("--remove", action="store_true",
                     help="Remove tags from (instead of adding to) file name(s)")
@@ -863,25 +859,34 @@ def split_up_filename(filename, exception_on_file_not_found=False):
 
     return os.path.join(dirname, basename), dirname, basename, basename_without_lnk
 
-def dir_tagfile_exists(filename):
+
+def is_a_directory_of_taggable_dirs(dir):
 
     global list_of_taggable_dir_dirs
     global list_of_non_taggable_dir_dirs
 
-    parent_dir = os.path.dirname(os.path.abspath(filename))
+    if dir in list_of_taggable_dir_dirs:
+        return True
+    elif dir in list_of_non_taggable_dir_dirs:
+        return False
+    else:
+        allow_taggable_dirs_file = os.path.join( dir, ALLOW_TAGGING_DIRECTORIES_FILENAME)
+        return os.path.isfile(allow_taggable_dirs_file)        
 
+def tagfile_exists_in_same_dir(filename):
+
+    parent_dir = os.path.dirname(os.path.abspath(filename))
     if parent_dir in list_of_taggable_dir_dirs:
         return True
     elif parent_dir in list_of_non_taggable_dir_dirs:
         return False
     else:
-        allow_taggable_dirs_file = os.path.join( parent_dir, ALLOW_TAGGING_DIRECTORIES_FILENAME)
-        if os.path.isfile(allow_taggable_dirs_file):
+        if is_a_directory_of_taggable_dirs(parent_dir):
             list_of_taggable_dir_dirs.append(parent_dir)
             return True
         else:
             list_of_non_taggable_dir_dirs.append(parent_dir)
-            return False            
+            return False
 
 def is_taggable(filename):
     """
@@ -892,11 +897,8 @@ def is_taggable(filename):
     if os.path.isfile(filename):
         return True
     
-    elif not options.allow_tagging_dirs:
-        return False
-    
     elif os.path.isdir(filename):
-        return contains_tag(filename) or dir_tagfile_exists(filename)
+        return contains_tag(filename) or tagfile_exists_in_same_dir(filename)
     else:
         return False
 
@@ -909,9 +911,6 @@ def is_traversable_directory(filename):
 
     if os.path.isfile(filename):
         return False
-    
-    elif os.path.isdir(filename) and not options.allow_tagging_dirs:
-        return True
     
     else:
         return os.path.isdir(filename) and not is_taggable(filename)
@@ -1255,15 +1254,10 @@ def get_files_with_metadata(startdir=os.getcwd(), use_cache=True):
         cache = []
         for root, dirs, files in os.walk(startdir, topdown=True):
 
-            print(root)
-
-            if options.allow_tagging_dirs:
-                start = time.time()
-                taggable_dirs = [d for d in dirs if is_taggable(d)]
-                dirs[:] = [d for d in dirs if d not in taggable_dirs]
-                files.extend(taggable_dirs)
-                logging.info("Evaluating taggable dirs took %.2f seconds" % ( time.time() - start) )
-
+            if is_a_directory_of_taggable_dirs(root):
+                files.extend(dirs)
+                dirs[:] = []
+                    
             # logging.debug('get_files_with_metadata: root [%s]' % root)  # LOTS of debug output
             for filename in files:
 
@@ -2053,13 +2047,13 @@ def get_files_of_directory(directory):
     logging.debug('get_files_of_directory(' + directory + ') called and traversing file system ...')
     for (dirpath, dirnames, filenames) in os.walk(directory, topdown=True):
 
-        print(dirpath)
+        taggable_dirs = []
+        if is_a_directory_of_taggable_dirs(dirpath):
+            taggable_dirs = dirnames
+            files.extend(dirnames)
+            dirnames[:] = []
 
-        if options.allow_tagging_dirs:
-            start = time.time()
-            taggable_dirs = [d for d in dirnames if is_taggable(d)]
-            dirnames[:] = [d for d in dirnames if not d in taggable_dirs]
-            logging.info("Evaluating taggable dirs took %.2f seconds" % ( time.time() - start) )
+            # logging.info("Evaluating taggable dirs took %.2f seconds" % ( time.time() - start) )
 
 
         if len(files) % 5000 == 0 and len(files) > 0:
@@ -2067,13 +2061,11 @@ def get_files_of_directory(directory):
             logging.info('found ' + str(len(files)) + ' files so far ... counting ...')
         if options.recursive:
             files.extend([os.path.join(dirpath, x) for x in filenames])
-            if options.allow_tagging_dirs:
-                files.extend([os.path.join(dirpath, x) for x in taggable_dirs])
+            files.extend([os.path.join(dirpath, x) for x in taggable_dirs])
 
         else:
             files.extend(filenames)
-            if options.allow_tagging_dirs:
-                files.extend(taggable_dirs)
+            files.extend(taggable_dirs)
 
             break
     logging.debug('get_files_of_directory(' + directory + ') finished with ' + str(len(files)) + ' items')
